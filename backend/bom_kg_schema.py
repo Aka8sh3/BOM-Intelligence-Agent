@@ -286,7 +286,10 @@ class BOMKnowledgeGraph:
         raw_components = []
 
         with open(path, newline="", encoding="utf-8-sig") as fh:
-            reader = csv.reader(fh)
+            first_line = fh.readline()
+            fh.seek(0)
+            delimiter = ';' if ';' in first_line else ','
+            reader = csv.reader(fh, delimiter=delimiter)
             headers = []
             header_found = False
             
@@ -324,6 +327,10 @@ class BOMKnowledgeGraph:
 
                 # Assembly (platform)
                 platform = row_dict.get("platform", "").strip()
+                if not platform:
+                    import os
+                    platform = os.path.basename(path).replace(".csv", "").replace(".xlsx", "").replace("_", " ").title()
+
                 if platform:
                     self.add_assembly(platform, platform=platform)
                     assemblies_added.add(platform)

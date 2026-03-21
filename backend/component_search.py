@@ -39,6 +39,10 @@ def analyze_single_component(component: dict) -> dict:
     if not pn:
         return component
 
+    # Add a small delay to prevent NVIDIA 429 rate limit errors
+    import time
+    time.sleep(2)
+
     # Run LLM analysis
     analysis = llm_analyze_component(
         part_number=pn,
@@ -79,7 +83,7 @@ def analyze_bom_components(components: List[dict],
     total = len(components)
     analyzed = []
     
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=2) as executor:
         future_to_comp = {executor.submit(analyze_single_component, comp): comp for comp in components}
         
         completed_count = 0

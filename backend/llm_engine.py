@@ -31,11 +31,12 @@ def get_llm():
     try:
         from langchain_openai import ChatOpenAI
         _llm = ChatOpenAI(
-            model="moonshotai/kimi-k2.5",
+            model="meta/llama-3.1-70b-instruct",
             base_url="https://integrate.api.nvidia.com/v1",
             api_key=api_key,
             temperature=1.0,
-            top_p=1.0
+            top_p=1.0,
+            timeout=30.0
         )
         return _llm
     except Exception as e:
@@ -210,6 +211,95 @@ Return ONLY valid JSON:
     except Exception as e:
         print(f"[LLM] PCN parse failed: {e}")
         return {}
+
+
+def llm_infer_bom_relationships(components: list) -> list:
+    """Use LLM (via raw HTTP) to infer semantic relationships between components."""
+    import os
+    import json
+    import requests
+    
+    api_key = os.environ.get("NVIDIA_API_KEY", "")
+    if not api_key:
+        print("[LLM] Missing NVIDIA_API_KEY")
+        return []
+
+    # Format the component list (limit to 25 to keep prompt concise and fast)
+    comps = components[:25]
+    comp_lines = []
+    for c in comps:
+        part = str(c.get('part_number', 'Unknown'))
+        desc = str(c.get('description', ''))
+        comp_lines.append(f"- {part} : {desc}")
+    
+    comp_list_str = "\n".join(comp_lines)
+
+    prompt = f"""You are an expert electronics hardware engineer. Below is a list of components from a single circuit board.
+Your task is to infer the logical, electrical, or structural relationships between these specific parts.
+
+Components:
+{comp_list_str}
+
+Identify up to 10 highly probable relationships between these exact components. 
+Use descriptive uppercase verbs for the relationship names, such as: 
+DRIVES, PROTECTS, FILTERS_POWER_FOR, REGULATES_POWER_FOR, CONTROLS, SENSES.
+
+Return ONLY a valid JSON array matching this exact structure (no markdown tags, just the raw JSON array):
+[
+    {{
+        "source_part": "exact part number from the list",
+        "relationship": "VERB_NAME",
+        "target_part": "exact part number from the list",
+        "reasoning": "Brief engineering explanation of why this relationship likely exists."
+    }}
+]"""
+
+    try:
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": "meta/llama-3.1-70b-instruct",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.5,
+            "max_tokens": 1024
+        }
+        
+        response = requests.post(
+            "https://integrate.api.nvidia.com/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=60.0
+        )
+        response.raise_for_status()
+        
+        data = response.json()
+        choices = data.get("choices", [])
+        if not choices:
+            print(f"  [LLM] Empty choices in response: {data}")
+            return []
+            
+        content = choices[0].get("message", {}).get("content")
+        if not content:
+            print("  [LLM] No content returned by the AI.")
+            return []
+            
+        content = str(content).strip()
+        
+        if content.startswith("```"):
+            content = content.split("\n", 1)[1] if "\n" in content else content[3:]
+        if content.endswith("```"):
+            content = content[:-3]
+        content = content.strip()
+        if content.startswith("json"):
+            content = content[4:].strip()
+            
+        return json.loads(content)
+        
+    except Exception as e:
+        print(f"[LLM] Semantic relationship inference failed: {e}")
+        return []
 
 
 def _fallback_component_analysis(part_number: str, description: str = "",
