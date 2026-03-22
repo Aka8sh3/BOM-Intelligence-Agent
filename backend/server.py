@@ -97,6 +97,79 @@ async def health():
     }
 
 
+@app.get("/api/graph")
+async def get_graph():
+    """Retrieve the intelligent BOM Knowledge graph native schema."""
+    try:
+        from falkordb import FalkorDB
+        db = FalkorDB(host='localhost', port=6379, decode_responses=True)
+        graph = db.select_graph("BOM_Intelligence")
+        
+        # Pull all edges which automatically fetch their source and target nodes
+        res = graph.query("MATCH (n)-[r]->(m) RETURN n, r, m").result_set
+        
+        nodes_dict = {}
+        links = []
+        
+        for record in res:
+            n = record[0]
+            r = record[1]
+            m = record[2]
+            
+            for node in [n, m]:
+                if node and node.id not in nodes_dict:
+                    lbl = node.get_label()
+                    props = node.properties or {}
+                    name = props.get("name", "")
+                    part_number = props.get("part_number", "")
+                    desc = props.get("description", "")
+                    manufacturer = props.get("manufacturer", "")
+                    
+                    nodes_dict[node.id] = {
+                        "id": node.id,
+                        "label": lbl,
+                        "name": name or part_number,
+                        "part_number": part_number,
+                        "description": desc,
+                        "manufacturer": manufacturer
+                    }
+            
+            if r:
+                r_props = r.properties or {}
+                links.append({
+                    "source": r.src_node,
+                    "target": r.dest_node,
+                    "label": r.relation,
+                    "reasoning": r_props.get("reasoning", "")
+                })
+        
+        # Also catch any isolated nodes
+        isolated_res = graph.query("MATCH (n) WHERE NOT (n)--() RETURN n").result_set
+        for record in isolated_res:
+             node = record[0]
+             if node and node.id not in nodes_dict:
+                 lbl = node.get_label()
+                 props = node.properties or {}
+                 name = props.get("name", "")
+                 part_number = props.get("part_number", "")
+                 nodes_dict[node.id] = {
+                     "id": node.id,
+                     "label": lbl,
+                     "name": name or part_number,
+                     "part_number": part_number
+                 }
+
+        return {
+            "success": True,
+            "data": {
+                "nodes": list(nodes_dict.values()),
+                "links": links
+            }
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @app.websocket("/ws/progress")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)

@@ -234,23 +234,31 @@ def llm_infer_bom_relationships(components: list) -> list:
     
     comp_list_str = "\n".join(comp_lines)
 
-    prompt = f"""You are an expert electronics hardware engineer. Below is a list of components from a single circuit board.
-Your task is to infer the logical, electrical, or structural relationships between these specific parts.
+    prompt = f"""You are a master electronics hardware architect. Below is a list of components from a single PCB.
+Your task is to reverse-engineer the highly probable schematic connections between these specific parts purely based on analyzing their exact part numbers and standard application circuits.
 
 Components:
 {comp_list_str}
 
-Identify up to 10 highly probable relationships between these exact components. 
-Use descriptive uppercase verbs for the relationship names, such as: 
-DRIVES, PROTECTS, FILTERS_POWER_FOR, REGULATES_POWER_FOR, CONTROLS, SENSES.
+Identify ALL highly specific electrical or logical connections between these exact components. Do not limit yourself to a specific number; map every critical relationship you can confidently infer.
+CRITICAL INSTRUCTION: You MUST prioritize critical power and signal paths! Specifically, always map out power supply connections (e.g., DC-DC Converters suppling power to ICs/Gate Drivers), gate drive paths to transistors, and feedback loops.
+
+Instead of generic verbs, predict the EXACT circuit connection, netname, or functional path. 
+Examples of excellent relationship names: 
+- PROVIDES_ISOLATED_POWER_TO
+- CONNECTS_OUTA_TO_GATE
+- PULLS_UP_I2C_FOR
+- FILTERS_VDD_PIN_ON
+- SENSES_CURRENT_FOR
+- ISOLATES_PWM_SIGNAL
 
 Return ONLY a valid JSON array matching this exact structure (no markdown tags, just the raw JSON array):
 [
     {{
         "source_part": "exact part number from the list",
-        "relationship": "VERB_NAME",
+        "relationship": "SPECIFIC_CIRCUIT_CONNECTION_VERB",
         "target_part": "exact part number from the list",
-        "reasoning": "Brief engineering explanation of why this relationship likely exists."
+        "reasoning": "Detailed engineering explanation of this specific schematic net (e.g. 'The OUTA pin of the UCC21520 gate driver connects through the 10R resistor to the gate of the SiC MOSFET.')"
     }}
 ]"""
 
@@ -263,7 +271,7 @@ Return ONLY a valid JSON array matching this exact structure (no markdown tags, 
             "model": "meta/llama-3.1-70b-instruct",
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.5,
-            "max_tokens": 1024
+            "max_tokens": 4096
         }
         
         response = requests.post(
